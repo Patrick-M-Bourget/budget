@@ -4,7 +4,7 @@
     {"id": "chequing", "name": "Chequing", "kind": "cash"},
     {"id": "savings", "name": "Savings", "kind": "cash"},
     {"id": "rrsp", "name": "RRSP", "kind": "investment"},
-    {"id": "mortgage", "name": "Mortgage", "kind": "debt"}
+    {"id": "mortgage", "name": "Mortgage", "kind": "debt", "mortgage": {"ratePercent": 4.79, "payment": 2400.0, "frequency": "monthly", "firstPayment": "2026-12-01", "paidFrom": "chequing", "renewal": "2027-06-01"}}
   ],
   "balances": [
     {"account": "chequing", "date": "2026-11-01", "balance": 4200.0},
@@ -15,7 +15,6 @@
   ],
   "items": [
     {"name": "Salary", "category": "Income", "kind": "income", "amount": 3100.0, "account": "chequing", "start": "2026-11-15", "repeat": {"unit": "semimonthly", "days": [15, 31]}},
-    {"name": "Mortgage", "category": "Housing", "kind": "expense", "amount": 2400.0, "account": "chequing", "start": "2026-12-01", "repeat": {"unit": "month"}},
     {"name": "Property tax", "category": "Housing", "kind": "expense", "amount": 1450.0, "account": "chequing", "start": "2027-02-28", "repeat": {"unit": "month", "every": 3}},
     {"name": "Hydro", "category": "Utilities", "kind": "expense", "amount": 180.0, "account": "chequing", "start": "2026-11-20", "repeat": {"unit": "month", "every": 2}},
     {"name": "Internet", "category": "Utilities", "kind": "expense", "amount": 85.0, "account": "chequing", "start": "2026-11-08", "repeat": {"unit": "month"}},

@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import type { Budget, Cents, DateStr, Item } from "../data/types";
+import type { Account, Budget, Cents, DateStr, Item, MortgageFrequency } from "../data/types";
 
 const fmt = (d: dayjs.Dayjs): DateStr => d.format("YYYY-MM-DD");
 
@@ -38,6 +38,8 @@ export type Forecast = {
   months: MonthRow[];
   /** Lowest end-of-day balance per cash account. */
   lowest: Record<string, { date: DateStr; balance: Cents }>;
+  /** Dates to mark on the charts, inside the window. */
+  markers: { date: DateStr; label: string }[];
 };
 
 /** Same-day order: money in, then money moved between accounts, then money out. */
@@ -73,6 +75,35 @@ export function expandItem(item: Item, from: DateStr, to: DateStr): DateStr[] {
   return dates;
 }
 
+const PERIODS_PER_YEAR: Record<MortgageFrequency, number> = {
+  monthly: 12,
+  biweekly: 26,
+  "accelerated-biweekly": 26,
+  weekly: 52,
+  "accelerated-weekly": 52,
+};
+const PAYMENT_REPEAT: Record<MortgageFrequency, Item["repeat"]> = {
+  monthly: { unit: "month", every: 1 },
+  biweekly: { unit: "week", every: 2 },
+  "accelerated-biweekly": { unit: "week", every: 2 },
+  weekly: { unit: "week", every: 1 },
+  "accelerated-weekly": { unit: "week", every: 1 },
+};
+
+/**
+ * Interest rate per payment period. Canadian fixed-rate mortgages compound semi-annually,
+ * so the effective per-period rate is (1 + r/2)^(2/n) − 1.
+ */
+export function periodicRate(ratePercent: number, frequency: MortgageFrequency): number {
+  return Math.pow(1 + ratePercent / 200, 2 / PERIODS_PER_YEAR[frequency]) - 1;
+}
+
+/** Something due on a day: a scheduled item, or a mortgage payment worked out from the balance owed. */
+type Due = { order: number; item: Item } | { order: number; mortgage: Account };
+
+/** What gets posted to the accounts and listed in the month. */
+type Entry = Pick<Occurrence, "name" | "category" | "kind" | "account" | "to" | "amount">;
+
 /** End-of-day balances per account from `today` over the budget's horizon. */
 export function forecast(budget: Budget, today: DateStr): Forecast {
   const to = fmt(dayjs(today).add(budget.horizonMonths, "month").subtract(1, "day"));
@@ -85,10 +116,19 @@ export function forecast(budget: Budget, today: DateStr): Forecast {
     if (b.date < start) start = b.date;
   }
 
-  const due = new Map<DateStr, Item[]>();
-  for (const item of budget.items)
-    for (const date of expandItem(item, start, to)) due.set(date, [...(due.get(date) ?? []), item]);
-  for (const list of due.values()) list.sort((a, b) => KIND_ORDER[a.kind] - KIND_ORDER[b.kind]);
+  const due = new Map<DateStr, Due[]>();
+  const add = (date: DateStr, d: Due) => due.set(date, [...(due.get(date) ?? []), d]);
+  for (const item of budget.items) for (const date of expandItem(item, start, to)) add(date, { order: KIND_ORDER[item.kind], item });
+  const markers: Forecast["markers"] = [];
+  for (const a of budget.accounts) {
+    const m = a.mortgage;
+    if (!m) continue;
+    const schedule: Item = { name: "", category: "", kind: "expense", amount: 0, account: a.id, start: m.firstPayment, repeat: PAYMENT_REPEAT[m.frequency] };
+    for (const date of expandItem(schedule, start, to)) add(date, { order: KIND_ORDER.expense, mortgage: a });
+    if (m.renewal && m.renewal >= today && m.renewal <= to) markers.push({ date: m.renewal, label: `${a.name} renewal` });
+  }
+  // Stable sort keeps file order within the same kind.
+  for (const list of due.values()) list.sort((a, b) => a.order - b.order);
 
   // Undefined until the account's first real balance.
   const balances: Record<string, Cents | undefined> = {};
@@ -126,24 +166,35 @@ export function forecast(budget: Budget, today: DateStr): Forecast {
     if (inWindow && row?.month !== date.slice(0, 7))
       months.push((row = { month: date.slice(0, 7), in: 0, out: 0, net: 0, end: {}, endTotals: totals({}), occurrences: [] }));
 
-    for (const item of due.get(date) ?? []) {
-      const fromApplied = move(item.account, item.kind === "income" ? item.amount : -item.amount, anchored);
-      const toApplied = item.kind === "transfer" && move(item.to, item.amount, anchored);
-      if ((!fromApplied && !toApplied) || !inWindow || !row) continue;
-      const occ: Occurrence = {
-        date,
-        name: item.name,
-        category: item.category,
-        kind: item.kind,
-        account: item.account,
-        amount: item.amount,
-        balanceAfter: balances[item.account] ?? 0,
-      };
-      if (item.to !== undefined) occ.to = item.to;
+    /** Applies an entry to its account(s) and lists it in the month if inside the window. */
+    const post = (e: Entry) => {
+      const fromApplied = move(e.account, e.kind === "income" ? e.amount : -e.amount, anchored);
+      const toApplied = e.kind === "transfer" && move(e.to, e.amount, anchored);
+      if ((!fromApplied && !toApplied) || !inWindow || !row) return;
+      const occ: Occurrence = { date, ...e, balanceAfter: balances[e.account] ?? 0 };
+      if (e.to === undefined) delete occ.to;
       row.occurrences.push(occ);
-      if (item.kind === "income") row.in += item.amount;
-      if (item.kind === "expense") row.out += item.amount;
+      if (e.kind === "income") row.in += e.amount;
+      if (e.kind === "expense") row.out += e.amount;
       row.net = row.in - row.out;
+    };
+
+    for (const d of due.get(date) ?? []) {
+      if ("item" in d) {
+        const { name, category, kind, account, to, amount } = d.item;
+        post({ name, category, kind, account, to, amount });
+        continue;
+      }
+      // Mortgage payment: interest on what's owed is spending; the rest pays down the principal.
+      const a = d.mortgage;
+      const m = a.mortgage!;
+      const owed = -(balances[a.id] ?? 0);
+      if (balances[a.id] === undefined || owed <= 0) continue;
+      const interest = Math.round(owed * periodicRate(m.ratePercent, m.frequency));
+      const principal = Math.min(m.payment, owed + interest) - interest;
+      if (interest > 0) post({ name: `${a.name} interest`, category: "Housing", kind: "expense", account: m.paidFrom, amount: interest });
+      if (principal > 0)
+        post({ name: `${a.name} principal`, category: "Housing", kind: "transfer", account: m.paidFrom, to: a.id, amount: principal });
     }
     Object.assign(balances, anchored);
 
@@ -160,5 +211,5 @@ export function forecast(budget: Budget, today: DateStr): Forecast {
     }
   }
 
-  return { from: today, to, daily, months, lowest };
+  return { from: today, to, daily, months, lowest, markers };
 }

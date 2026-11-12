@@ -5,10 +5,28 @@ export type Cents = number;
 
 export type AccountKind = "cash" | "investment" | "debt";
 
+export type MortgageFrequency = "monthly" | "biweekly" | "accelerated-biweekly" | "weekly" | "accelerated-weekly";
+
+/** Payment terms for a debt account that is a mortgage. */
+export type Mortgage = {
+  /** Annual rate in percent, compounded semi-annually (Canadian fixed-rate convention). */
+  ratePercent: number;
+  /** The lender's actual payment amount. */
+  payment: Cents;
+  frequency: MortgageFrequency;
+  firstPayment: DateStr;
+  /** Cash account the payment comes out of. */
+  paidFrom: string;
+  /** End of the current term; drawn on the chart. The rate is assumed to stay the same after it. */
+  renewal?: DateStr;
+};
+
 export type Account = {
   id: string;
   name: string;
   kind: AccountKind;
+  /** Only on debt accounts. */
+  mortgage?: Mortgage;
 };
 
 /**

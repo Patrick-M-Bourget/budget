@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import type { Account, AccountKind, Budget, Cents, Item, RealBalance, Repeat } from "./types";
+import type { Account, AccountKind, Budget, Cents, Item, Mortgage, MortgageFrequency, RealBalance, Repeat } from "./types";
 
 export type ValidationResult = { ok: true; budget: Budget } | { ok: false; errors: string[] };
 
@@ -22,6 +22,7 @@ const isWhole = (v: unknown, min: number, max: number): v is number =>
 
 const ACCOUNT_KINDS: AccountKind[] = ["cash", "investment", "debt"];
 const ITEM_KINDS: Item["kind"][] = ["income", "expense", "transfer"];
+const FREQUENCIES: MortgageFrequency[] = ["monthly", "biweekly", "accelerated-biweekly", "weekly", "accelerated-weekly"];
 const quoted = (xs: readonly string[]) => xs.map((x) => `"${x}"`).join(", ");
 
 const UNITS = ["day", "week", "month", "year", "semimonthly"] as const;
@@ -63,6 +64,7 @@ export function validateBudget(raw: unknown): ValidationResult {
   const accounts: Account[] = [];
   const ids = new Set<string>();
   const kinds = new Map<string, AccountKind>();
+  const mortgages: [string, Obj, Account][] = [];
   list(raw, "accounts").forEach((a, i) => {
     const p = `accounts[${i}]`;
     if (!isObj(a)) return err(p, "expected an object");
@@ -73,8 +75,37 @@ export function validateBudget(raw: unknown): ValidationResult {
     const kind = ACCOUNT_KINDS.find((k) => k === a.kind);
     if (!kind) err(`${p}.kind`, `expected one of ${quoted(ACCOUNT_KINDS)}`);
     kinds.set(id, kind ?? "cash");
-    accounts.push({ id, name, kind: kind ?? "cash" });
+    const account: Account = { id, name, kind: kind ?? "cash" };
+    if (a.mortgage !== undefined) {
+      if (kind !== "debt") err(`${p}.mortgage`, 'only a "debt" account can be a mortgage');
+      const m = isObj(a.mortgage) ? a.mortgage : {};
+      if (!isObj(a.mortgage)) err(`${p}.mortgage`, "expected an object");
+      mortgages.push([`${p}.mortgage`, m, account]);
+    }
+    accounts.push(account);
   });
+  // Mortgages refer to other accounts, so check them once every account id is known.
+  for (const [p, m, account] of mortgages) {
+    const rate = m.ratePercent;
+    if (typeof rate !== "number" || !(rate >= 0 && rate <= 30)) err(`${p}.ratePercent`, "expected a percentage from 0 to 30");
+    const payment = toCents(m.payment, false);
+    if (payment === null) err(`${p}.payment`, "expected a positive dollar amount with at most 2 decimals");
+    const frequency = FREQUENCIES.find((f) => f === m.frequency);
+    if (!frequency) err(`${p}.frequency`, `expected one of ${quoted(FREQUENCIES)}`);
+    const firstPayment = date(m, "firstPayment", p);
+    const paidFrom = accountRef(m, "paidFrom", p);
+    if (paidFrom && kinds.get(paidFrom) !== undefined && kinds.get(paidFrom) !== "cash")
+      err(`${p}.paidFrom`, "expected a cash account");
+    const mortgage: Mortgage = {
+      ratePercent: typeof rate === "number" ? rate : 0,
+      payment: payment ?? 0,
+      frequency: frequency ?? "monthly",
+      firstPayment,
+      paidFrom,
+    };
+    if (m.renewal !== undefined) mortgage.renewal = date(m, "renewal", p);
+    account.mortgage = mortgage;
+  }
 
   const balances: RealBalance[] = [];
   const seen = new Set<string>();
