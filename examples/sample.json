@@ -1,23 +1,31 @@
 {
   "horizonMonths": 12,
   "accounts": [
-    { "id": "chequing", "name": "Chequing", "kind": "cash" }
+    {"id": "chequing", "name": "Chequing", "kind": "cash"},
+    {"id": "savings", "name": "Savings", "kind": "cash"},
+    {"id": "rrsp", "name": "RRSP", "kind": "investment"},
+    {"id": "mortgage", "name": "Mortgage", "kind": "debt"}
   ],
   "balances": [
-    { "account": "chequing", "date": "2026-11-01", "balance": 4200.00 },
-    { "account": "chequing", "date": "2026-11-10", "balance": 2650.00 }
+    {"account": "chequing", "date": "2026-11-01", "balance": 4200.0},
+    {"account": "chequing", "date": "2026-11-10", "balance": 2650.0},
+    {"account": "savings", "date": "2026-11-01", "balance": 18500.0},
+    {"account": "rrsp", "date": "2026-11-01", "balance": 42000.0},
+    {"account": "mortgage", "date": "2026-11-01", "balance": 412000.0}
   ],
   "items": [
-    { "name": "Salary", "category": "Income", "kind": "income", "amount": 3100.00, "account": "chequing", "start": "2026-11-15", "repeat": { "unit": "semimonthly", "days": [15, 31] } },
-    { "name": "Mortgage", "category": "Housing", "kind": "expense", "amount": 2400.00, "account": "chequing", "start": "2026-12-01", "repeat": { "unit": "month" } },
-    { "name": "Property tax", "category": "Housing", "kind": "expense", "amount": 1450.00, "account": "chequing", "start": "2027-02-28", "repeat": { "unit": "month", "every": 3 } },
-    { "name": "Hydro", "category": "Utilities", "kind": "expense", "amount": 180.00, "account": "chequing", "start": "2026-11-20", "repeat": { "unit": "month", "every": 2 } },
-    { "name": "Internet", "category": "Utilities", "kind": "expense", "amount": 85.00, "account": "chequing", "start": "2026-11-08", "repeat": { "unit": "month" } },
-    { "name": "Groceries", "category": "Food", "kind": "expense", "amount": 210.00, "account": "chequing", "start": "2026-11-06", "repeat": { "unit": "week" } },
-    { "name": "Fun money", "category": "Discretionary", "kind": "expense", "amount": 500.00, "account": "chequing", "start": "2026-11-03", "repeat": { "unit": "month" } },
-    { "name": "Software", "category": "Subscriptions", "kind": "expense", "amount": 60.00, "account": "chequing", "start": "2026-11-12", "repeat": { "unit": "month" } },
-    { "name": "Home insurance", "category": "Housing", "kind": "expense", "amount": 1320.00, "account": "chequing", "start": "2027-04-15", "repeat": { "unit": "year" } },
-    { "name": "Furnace service", "category": "Housing", "kind": "expense", "amount": 240.00, "account": "chequing", "start": "2027-01-20" },
-    { "name": "Gym", "category": "Discretionary", "kind": "expense", "amount": 55.00, "account": "chequing", "start": "2026-11-05", "repeat": { "unit": "month" }, "end": "2027-03-31" }
+    {"name": "Salary", "category": "Income", "kind": "income", "amount": 3100.0, "account": "chequing", "start": "2026-11-15", "repeat": {"unit": "semimonthly", "days": [15, 31]}},
+    {"name": "Mortgage", "category": "Housing", "kind": "expense", "amount": 2400.0, "account": "chequing", "start": "2026-12-01", "repeat": {"unit": "month"}},
+    {"name": "Property tax", "category": "Housing", "kind": "expense", "amount": 1450.0, "account": "chequing", "start": "2027-02-28", "repeat": {"unit": "month", "every": 3}},
+    {"name": "Hydro", "category": "Utilities", "kind": "expense", "amount": 180.0, "account": "chequing", "start": "2026-11-20", "repeat": {"unit": "month", "every": 2}},
+    {"name": "Internet", "category": "Utilities", "kind": "expense", "amount": 85.0, "account": "chequing", "start": "2026-11-08", "repeat": {"unit": "month"}},
+    {"name": "Groceries", "category": "Food", "kind": "expense", "amount": 210.0, "account": "chequing", "start": "2026-11-06", "repeat": {"unit": "week"}},
+    {"name": "Fun money", "category": "Discretionary", "kind": "expense", "amount": 500.0, "account": "chequing", "start": "2026-11-03", "repeat": {"unit": "month"}},
+    {"name": "Software", "category": "Subscriptions", "kind": "expense", "amount": 60.0, "account": "chequing", "start": "2026-11-12", "repeat": {"unit": "month"}},
+    {"name": "Home insurance", "category": "Housing", "kind": "expense", "amount": 1320.0, "account": "chequing", "start": "2027-04-15", "repeat": {"unit": "year"}},
+    {"name": "Furnace service", "category": "Housing", "kind": "expense", "amount": 240.0, "account": "chequing", "start": "2027-01-20"},
+    {"name": "Gym", "category": "Discretionary", "kind": "expense", "amount": 55.0, "account": "chequing", "start": "2026-11-05", "repeat": {"unit": "month"}, "end": "2027-03-31"},
+    {"name": "Savings contribution", "category": "Savings", "kind": "transfer", "amount": 500.0, "account": "chequing", "to": "savings", "start": "2026-11-16", "repeat": {"unit": "semimonthly", "days": [1, 16]}},
+    {"name": "RRSP contribution", "category": "Savings", "kind": "transfer", "amount": 300.0, "account": "chequing", "to": "rrsp", "start": "2026-12-02", "repeat": {"unit": "month"}}
   ]
 }

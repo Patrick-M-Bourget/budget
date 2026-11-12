@@ -3,13 +3,18 @@ export type DateStr = string;
 /** Money in integer cents. The JSON file uses dollars; the validator converts. */
 export type Cents = number;
 
+export type AccountKind = "cash" | "investment" | "debt";
+
 export type Account = {
   id: string;
   name: string;
-  kind: "cash";
+  kind: AccountKind;
 };
 
-/** An end-of-day balance read from the bank. The forecast re-anchors to it. */
+/**
+ * An end-of-day balance read from the bank. The forecast re-anchors to it.
+ * Stored as the account's value: a debt is negative (the file says what you owe, as a positive amount).
+ */
 export type RealBalance = { account: string; date: DateStr; balance: Cents };
 
 export type Repeat =
@@ -21,10 +26,13 @@ export type Item = {
   id?: string;
   name: string;
   category: string;
-  kind: "income" | "expense";
+  /** A transfer moves money from `account` to `to` and doesn't change net worth. */
+  kind: "income" | "expense" | "transfer";
   /** Always positive; `kind` gives the direction. */
   amount: Cents;
   account: string;
+  /** Destination account, for transfers only. */
+  to?: string;
   start: DateStr;
   /** Omitted means the item happens once, on `start`. */
   repeat?: Repeat;
