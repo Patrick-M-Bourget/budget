@@ -122,7 +122,7 @@ function Dashboard({ budget }: { budget: Budget }) {
             <LineChart
               h={220}
               data={shown.forecast.daily.map((d, i) => ({
-                date: dayjs(d.date).format("MMM D"),
+                date: d.date,
                 ...Object.fromEntries(plans.map((p) => [p.name, (p.forecast.daily[i]?.totals[m.key] ?? 0) / 100])),
               }))}
               dataKey="date"
@@ -131,7 +131,10 @@ function Dashboard({ budget }: { budget: Budget }) {
               withDots={false}
               withLegend={plans.length > 1}
               valueFormatter={(v) => money.format(v)}
-              yAxisProps={{ width: 90 }}
+              yAxisProps={{ width: 90, domain: ["auto", "auto"] }}
+              xAxisProps={{ tickFormatter: (d: string) => dayjs(d).format("MMM YY"), minTickGap: 24 }}
+              tooltipProps={{ labelFormatter: (d) => fmtDate(String(d)) }}
+              referenceLines={shown.forecast.markers.map((mk) => ({ x: mk.date, label: mk.label, color: "gray.6" }))}
             />
           </Paper>
         ))}
