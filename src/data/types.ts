@@ -58,10 +58,24 @@ export type Item = {
   end?: DateStr;
 };
 
+/** Hides a current-plan item's occurrences between two dates (inclusive) while a scenario is on. */
+export type Pause = { item: string; from: DateStr; to: DateStr };
+
+/** A "what if" forecast as current plan + this scenario alone. Scenarios never stack. */
+export type Scenario = {
+  id: string;
+  name: string;
+  /** Scales this scenario's expense items up, e.g. 15 means +15%. */
+  contingencyPercent: number;
+  items: Item[];
+  pauses: Pause[];
+};
+
 export type Budget = {
   /** Months to forecast from today, 1–36. */
   horizonMonths: number;
   accounts: Account[];
   balances: RealBalance[];
   items: Item[];
+  scenarios: Scenario[];
 };
