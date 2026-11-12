@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import type { Account, Budget, Cents, Item, RealBalance, Repeat } from "./types";
+import type { Account, AccountKind, Budget, Cents, Item, RealBalance, Repeat } from "./types";
 
 export type ValidationResult = { ok: true; budget: Budget } | { ok: false; errors: string[] };
 
@@ -19,6 +19,10 @@ const toCents = (v: unknown, allowNegative: boolean): Cents | null => {
 
 const isWhole = (v: unknown, min: number, max: number): v is number =>
   Number.isInteger(v) && (v as number) >= min && (v as number) <= max;
+
+const ACCOUNT_KINDS: AccountKind[] = ["cash", "investment", "debt"];
+const ITEM_KINDS: Item["kind"][] = ["income", "expense", "transfer"];
+const quoted = (xs: readonly string[]) => xs.map((x) => `"${x}"`).join(", ");
 
 const UNITS = ["day", "week", "month", "year", "semimonthly"] as const;
 
@@ -58,6 +62,7 @@ export function validateBudget(raw: unknown): ValidationResult {
 
   const accounts: Account[] = [];
   const ids = new Set<string>();
+  const kinds = new Map<string, AccountKind>();
   list(raw, "accounts").forEach((a, i) => {
     const p = `accounts[${i}]`;
     if (!isObj(a)) return err(p, "expected an object");
@@ -65,8 +70,10 @@ export function validateBudget(raw: unknown): ValidationResult {
     if (id && ids.has(id)) err(`${p}.id`, `duplicate id "${id}"`);
     ids.add(id);
     const name = str(a, "name", p);
-    if (a.kind !== "cash") err(`${p}.kind`, 'expected "cash"');
-    accounts.push({ id, name, kind: "cash" });
+    const kind = ACCOUNT_KINDS.find((k) => k === a.kind);
+    if (!kind) err(`${p}.kind`, `expected one of ${quoted(ACCOUNT_KINDS)}`);
+    kinds.set(id, kind ?? "cash");
+    accounts.push({ id, name, kind: kind ?? "cash" });
   });
 
   const balances: RealBalance[] = [];
@@ -78,9 +85,13 @@ export function validateBudget(raw: unknown): ValidationResult {
     const d = date(b, "date", p);
     if (seen.has(`${account}|${d}`)) err(p, `second balance for "${account}" on ${d}`);
     seen.add(`${account}|${d}`);
-    const balance = toCents(b.balance, true);
-    if (balance === null) err(`${p}.balance`, "expected a dollar amount with at most 2 decimals");
-    balances.push({ account, date: d, balance: balance ?? 0 });
+    const isDebt = kinds.get(account) === "debt";
+    // Debts are entered as the amount owed: zero or more.
+    const balance = isDebt && typeof b.balance === "number" && b.balance < 0 ? null : toCents(b.balance, true);
+    if (balance === null)
+      err(`${p}.balance`, isDebt ? "expected the amount owed, as a positive dollar amount" : "expected a dollar amount with at most 2 decimals");
+    // A debt's value is what you owe, negated, so net worth is a plain sum.
+    balances.push({ account, date: d, balance: isDebt ? -(balance ?? 0) : (balance ?? 0) });
   });
   for (const a of accounts)
     if (a.id && !balances.some((b) => b.account === a.id))
@@ -99,22 +110,29 @@ export function validateBudget(raw: unknown): ValidationResult {
     }
     const name = str(it, "name", p);
     const category = it.category === undefined ? "Uncategorized" : str(it, "category", p);
-    if (it.kind !== "income" && it.kind !== "expense") err(`${p}.kind`, 'expected "income" or "expense"');
+    const kind = ITEM_KINDS.find((k) => k === it.kind);
+    if (!kind) err(`${p}.kind`, `expected one of ${quoted(ITEM_KINDS)}`);
     const amount = toCents(it.amount, false);
     if (amount === null) err(`${p}.amount`, "expected a positive dollar amount with at most 2 decimals");
     const account = accountRef(it, "account", p);
+    let to: string | undefined;
+    if (kind === "transfer") {
+      to = accountRef(it, "to", p);
+      if (to && to === account) err(`${p}.to`, "must be a different account");
+    } else if (it.to !== undefined) err(`${p}.to`, "only transfers have a destination account");
     const start = date(it, "start", p);
     const end = it.end === undefined ? undefined : date(it, "end", p);
     if (start && end && end < start) err(`${p}.end`, "is before start");
     const item: Item = {
       name,
       category,
-      kind: it.kind === "income" ? "income" : "expense",
+      kind: kind ?? "expense",
       amount: amount ?? 0,
       account,
       start,
     };
     if (id !== undefined) item.id = id;
+    if (to !== undefined) item.to = to;
     if (end !== undefined) item.end = end;
     if (it.repeat !== undefined) {
       const repeat = parseRepeat(it.repeat, `${p}.repeat`, err);
@@ -132,7 +150,7 @@ function parseRepeat(r: unknown, p: string, err: (path: string, msg: string) => 
     return null;
   }
   if (!UNITS.includes(r.unit as (typeof UNITS)[number])) {
-    err(`${p}.unit`, `expected one of ${UNITS.map((u) => `"${u}"`).join(", ")}`);
+    err(`${p}.unit`, `expected one of ${quoted(UNITS)}`);
     return null;
   }
   if (r.unit === "semimonthly") {

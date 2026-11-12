@@ -99,7 +99,7 @@ describe("validateBudget", () => {
     raw.items.push({ ...raw.items[0], kind: "income" });
     expect(errorsFor(raw)).toEqual([
       'accounts[1].id: duplicate id "chequing"',
-      'items[0].kind: expected "income" or "expense"',
+      'items[0].kind: expected one of "income", "expense", "transfer"',
       'items[1].id: duplicate id "pay"',
     ]);
   });
@@ -127,4 +127,33 @@ describe("validateBudget", () => {
       "items[2].repeat.every: expected a whole number from 1 to 400",
     ]);
   });
+
+  it("stores a debt's real balance as a negative value", () => {
+    const raw = valid();
+    raw.accounts.push({ id: "mtg", name: "Mortgage", kind: "debt" });
+    raw.balances.push({ account: "mtg", date: "2026-11-01", balance: 412000 });
+    const r = validateBudget(raw);
+    expect(r.ok && r.budget.balances[1]!.balance).toBe(-41200000);
+    raw.balances[1].balance = 0; // e.g. an unused HELOC
+    expect(validateBudget(raw).ok).toBe(true);
+  });
+
+  it("checks account kinds, debt balances and transfer destinations", () => {
+    const raw = valid();
+    raw.accounts.push({ id: "mtg", name: "Mortgage", kind: "loan" });
+    raw.accounts.push({ id: "heloc", name: "HELOC", kind: "debt" });
+    raw.balances.push({ account: "mtg", date: "2026-11-01", balance: 1 });
+    raw.balances.push({ account: "heloc", date: "2026-11-01", balance: -5 });
+    raw.items.push({ ...raw.items[0], kind: "transfer" });
+    raw.items.push({ ...raw.items[0], kind: "transfer", to: "chequing" });
+    raw.items.push({ ...raw.items[0], to: "heloc" });
+    expect(errorsFor(raw)).toEqual([
+      'accounts[1].kind: expected one of "cash", "investment", "debt"',
+      "balances[2].balance: expected the amount owed, as a positive dollar amount",
+      "items[1].to: expected text",
+      "items[2].to: must be a different account",
+      "items[3].to: only transfers have a destination account",
+    ]);
+  });
 });
+

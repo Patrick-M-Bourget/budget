@@ -192,4 +192,86 @@ describe("forecast", () => {
     // Dips to $100 on the 25th of every month; the first dip wins.
     expect(f.lowest.chq).toEqual({ date: "2026-01-25", balance: 100_00 });
   });
+
+  describe("accounts and transfers", () => {
+    const multi = (items: Item[], extra: Partial<Budget> = {}): Budget =>
+      budget(items, {
+        accounts: [
+          { id: "chq", name: "Chequing", kind: "cash" },
+          { id: "sav", name: "Savings", kind: "cash" },
+          { id: "rrsp", name: "RRSP", kind: "investment" },
+          { id: "mtg", name: "Mortgage", kind: "debt" },
+        ],
+        balances: [
+          { account: "chq", date: "2026-01-01", balance: 1000_00 },
+          { account: "sav", date: "2026-01-01", balance: 5000_00 },
+          { account: "rrsp", date: "2026-01-01", balance: 20000_00 },
+          { account: "mtg", date: "2026-01-01", balance: -300000_00 }, // owed $300k
+        ],
+        ...extra,
+      });
+    const day = (f: ReturnType<typeof forecast>, d: string) => f.daily.find((p) => p.date === d)!;
+
+    it("moves money between accounts without changing net worth", () => {
+      const f = forecast(
+        multi([
+          item({ name: "TFSA", kind: "transfer", amount: 200_00, account: "chq", to: "sav", start: "2026-01-15" }),
+          item({ name: "RRSP", kind: "transfer", amount: 100_00, account: "chq", to: "rrsp", start: "2026-01-15" }),
+        ]),
+        "2026-01-10",
+      );
+      const before = day(f, "2026-01-14"), after = day(f, "2026-01-15");
+      expect(after.balances).toMatchObject({ chq: 700_00, sav: 5200_00, rrsp: 20100_00 });
+      expect(after.totals.netWorth).toBe(before.totals.netWorth);
+      expect(after.totals).toEqual({ cash: 5900_00, investment: 20100_00, debt: 300000_00, netWorth: -274000_00 });
+    });
+
+    it("pays down a debt with a transfer into it", () => {
+      const f = forecast(
+        multi([item({ name: "Prepay", kind: "transfer", amount: 1000_00, account: "chq", to: "mtg", start: "2026-01-15", repeat: undefined })]),
+        "2026-01-10",
+      );
+      expect(day(f, "2026-01-15").totals.debt).toBe(299000_00);
+      expect(day(f, "2026-01-15").balances.mtg).toBe(-299000_00);
+    });
+
+    it("leaves transfers out of in/out but lists them, ordered between income and expenses", () => {
+      const f = forecast(
+        multi([
+          item({ name: "Bill", amount: 50_00, start: "2026-02-01", repeat: undefined }),
+          item({ name: "Save", kind: "transfer", amount: 100_00, account: "chq", to: "sav", start: "2026-02-01", repeat: undefined }),
+          item({ name: "Pay", kind: "income", amount: 500_00, start: "2026-02-01", repeat: undefined }),
+        ]),
+        "2026-01-10",
+      );
+      const feb = f.months[1]!;
+      expect(feb).toMatchObject({ in: 500_00, out: 50_00, net: 450_00 });
+      expect(feb.occurrences.map((o) => [o.name, o.to, o.balanceAfter])).toEqual([
+        ["Pay", undefined, 1500_00],
+        ["Save", "sav", 1400_00],
+        ["Bill", undefined, 1350_00],
+      ]);
+      expect(feb.endTotals.cash).toBe(1350_00 + 5100_00);
+    });
+
+    it("applies only the side of a transfer that has no real balance that day", () => {
+      const f = forecast(
+        multi([item({ kind: "transfer", amount: 100_00, account: "chq", to: "sav", start: "2026-01-10", repeat: undefined })], {
+          balances: [
+            { account: "chq", date: "2026-01-01", balance: 1000_00 },
+            { account: "sav", date: "2026-01-10", balance: 7000_00 }, // already includes the transfer
+            { account: "rrsp", date: "2026-01-01", balance: 0 },
+            { account: "mtg", date: "2026-01-01", balance: 0 },
+          ],
+        }),
+        "2026-01-10",
+      );
+      expect(day(f, "2026-01-10").balances).toMatchObject({ chq: 900_00, sav: 7000_00 });
+    });
+
+    it("tracks the lowest balance for cash accounts only", () => {
+      const f = forecast(multi([]), "2026-01-10");
+      expect(Object.keys(f.lowest).sort()).toEqual(["chq", "sav"]);
+    });
+  });
 });
