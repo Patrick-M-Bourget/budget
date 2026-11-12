@@ -175,5 +175,48 @@ describe("validateBudget", () => {
       "accounts[1].mortgage.paidFrom: expected a cash account",
     ]);
   });
+
+  it("parses scenarios with a default 15% contingency", () => {
+    const raw = valid();
+    raw.items[0].id = "pay";
+    raw.scenarios = [
+      {
+        id: "reno",
+        name: "Reno 2027",
+        items: [{ name: "Deposit", kind: "expense", amount: 5000, account: "chequing", start: "2027-05-01" }],
+        pauses: [{ item: "pay", from: "2027-05-01", to: "2027-06-30" }],
+      },
+    ];
+    const r = validateBudget(raw);
+    expect(r.ok && r.budget.scenarios[0]).toMatchObject({
+      contingencyPercent: 15,
+      items: [{ name: "Deposit", amount: 500000 }],
+      pauses: [{ item: "pay", from: "2027-05-01", to: "2027-06-30" }],
+    });
+    delete raw.scenarios;
+    expect(validateBudget(raw).ok && (validateBudget(raw) as any).budget.scenarios).toEqual([]);
+  });
+
+  it("checks scenario fields, items and pauses", () => {
+    const raw = valid();
+    raw.scenarios = [
+      {
+        id: "reno",
+        name: "Reno",
+        contingencyPercent: 150,
+        items: [{ name: "Deposit", kind: "expense", amount: 5000, account: "nope", start: "2027-05-01" }],
+        pauses: [{ item: "ghost", from: "2027-06-01", to: "2027-05-01" }],
+      },
+      { id: "reno", name: "Again", items: "none" },
+    ];
+    expect(errorsFor(raw)).toEqual([
+      "scenarios[0].contingencyPercent: expected a percentage from 0 to 100",
+      'scenarios[0].items[0].account: no account with id "nope"',
+      'scenarios[0].pauses[0].item: no current-plan item with id "ghost"',
+      "scenarios[0].pauses[0].to: is before from",
+      'scenarios[1].id: duplicate id "reno"',
+      "scenarios[1].items: expected a list",
+    ]);
+  });
 });
 

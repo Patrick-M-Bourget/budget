@@ -1,5 +1,5 @@
 import dayjs from "dayjs";
-import type { Account, Budget, Cents, DateStr, Item, MortgageFrequency } from "../data/types";
+import type { Account, Budget, Cents, DateStr, Item, MortgageFrequency, Scenario } from "../data/types";
 
 const fmt = (d: dayjs.Dayjs): DateStr => d.format("YYYY-MM-DD");
 
@@ -104,8 +104,17 @@ type Due = { order: number; item: Item } | { order: number; mortgage: Account };
 /** What gets posted to the accounts and listed in the month. */
 type Entry = Pick<Occurrence, "name" | "category" | "kind" | "account" | "to" | "amount">;
 
-/** End-of-day balances per account from `today` over the budget's horizon. */
-export function forecast(budget: Budget, today: DateStr): Forecast {
+/** A scenario's expenses scaled up by its contingency; income and transfers are left alone. */
+export function withContingency(scenario: Scenario): Item[] {
+  const factor = 1 + scenario.contingencyPercent / 100;
+  return scenario.items.map((it) => (it.kind === "expense" ? { ...it, amount: Math.round(it.amount * factor) } : it));
+}
+
+/**
+ * End-of-day balances per account from `today` over the budget's horizon:
+ * the current plan, plus one scenario if given (scenarios never stack).
+ */
+export function forecast(budget: Budget, today: DateStr, scenario?: Scenario): Forecast {
   const to = fmt(dayjs(today).add(budget.horizonMonths, "month").subtract(1, "day"));
 
   // Real balances by date. A real balance is end-of-day, so it overrides anything due that day.
@@ -118,7 +127,12 @@ export function forecast(budget: Budget, today: DateStr): Forecast {
 
   const due = new Map<DateStr, Due[]>();
   const add = (date: DateStr, d: Due) => due.set(date, [...(due.get(date) ?? []), d]);
-  for (const item of budget.items) for (const date of expandItem(item, start, to)) add(date, { order: KIND_ORDER[item.kind], item });
+  const pauses = scenario?.pauses ?? [];
+  const paused = (item: Item, date: DateStr) =>
+    item.id !== undefined && pauses.some((p) => p.item === item.id && date >= p.from && date <= p.to);
+  const items = scenario ? [...budget.items, ...withContingency(scenario)] : budget.items;
+  for (const item of items)
+    for (const date of expandItem(item, start, to)) if (!paused(item, date)) add(date, { order: KIND_ORDER[item.kind], item });
   const markers: Forecast["markers"] = [];
   for (const a of budget.accounts) {
     const m = a.mortgage;
@@ -212,4 +226,15 @@ export function forecast(budget: Budget, today: DateStr): Forecast {
   }
 
   return { from: today, to, daily, months, lowest, markers };
+}
+
+export type Plan = { id: string; name: string; forecast: Forecast };
+export const CURRENT_PLAN = "current";
+
+/** The current plan followed by each chosen scenario, each forecast on its own. */
+export function comparePlans(budget: Budget, today: DateStr, scenarioIds: string[]): Plan[] {
+  const plans: Plan[] = [{ id: CURRENT_PLAN, name: "Current plan", forecast: forecast(budget, today) }];
+  for (const sc of budget.scenarios)
+    if (scenarioIds.includes(sc.id)) plans.push({ id: sc.id, name: sc.name, forecast: forecast(budget, today, sc) });
+  return plans;
 }

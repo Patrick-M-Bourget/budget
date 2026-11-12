@@ -1,5 +1,17 @@
 import dayjs from "dayjs";
-import type { Account, AccountKind, Budget, Cents, Item, Mortgage, MortgageFrequency, RealBalance, Repeat } from "./types";
+import type {
+  Account,
+  AccountKind,
+  Budget,
+  Cents,
+  Item,
+  Mortgage,
+  MortgageFrequency,
+  Pause,
+  RealBalance,
+  Repeat,
+  Scenario,
+} from "./types";
 
 export type ValidationResult = { ok: true; budget: Budget } | { ok: false; errors: string[] };
 
@@ -128,11 +140,12 @@ export function validateBudget(raw: unknown): ValidationResult {
     if (a.id && !balances.some((b) => b.account === a.id))
       err("balances", `account "${a.id}" needs at least one real balance to start from`);
 
-  const items: Item[] = [];
   const itemIds = new Set<string>();
-  list(raw, "items").forEach((it, i) => {
-    const p = `items[${i}]`;
-    if (!isObj(it)) return err(p, "expected an object");
+  const parseItem = (it: unknown, p: string): Item | null => {
+    if (!isObj(it)) {
+      err(p, "expected an object");
+      return null;
+    }
     let id: string | undefined;
     if (it.id !== undefined) {
       id = str(it, "id", p);
@@ -169,10 +182,45 @@ export function validateBudget(raw: unknown): ValidationResult {
       const repeat = parseRepeat(it.repeat, `${p}.repeat`, err);
       if (repeat) item.repeat = repeat;
     }
-    items.push(item);
+    return item;
+  };
+
+  const items = list(raw, "items").flatMap((it, i) => parseItem(it, `items[${i}]`) ?? []);
+  const planItemIds = new Set(items.flatMap((it) => (it.id === undefined ? [] : [it.id])));
+
+  const scenarios: Scenario[] = [];
+  const scenarioIds = new Set<string>();
+  list(raw, "scenarios", true).forEach((sc, i) => {
+    const p = `scenarios[${i}]`;
+    if (!isObj(sc)) return err(p, "expected an object");
+    const id = str(sc, "id", p);
+    if (id && scenarioIds.has(id)) err(`${p}.id`, `duplicate id "${id}"`);
+    scenarioIds.add(id);
+    const name = str(sc, "name", p);
+    let contingencyPercent = 15;
+    if (sc.contingencyPercent !== undefined) {
+      const c = sc.contingencyPercent;
+      if (typeof c === "number" && c >= 0 && c <= 100) contingencyPercent = c;
+      else err(`${p}.contingencyPercent`, "expected a percentage from 0 to 100");
+    }
+    const scItems = (Array.isArray(sc.items) ? sc.items : []).flatMap((it, j) => parseItem(it, `${p}.items[${j}]`) ?? []);
+    if (!Array.isArray(sc.items)) err(`${p}.items`, "expected a list");
+    const pauses: Pause[] = [];
+    if (sc.pauses !== undefined && !Array.isArray(sc.pauses)) err(`${p}.pauses`, "expected a list");
+    (Array.isArray(sc.pauses) ? sc.pauses : []).forEach((ps, j) => {
+      const pp = `${p}.pauses[${j}]`;
+      if (!isObj(ps)) return err(pp, "expected an object");
+      const item = str(ps, "item", pp);
+      if (item && !planItemIds.has(item)) err(`${pp}.item`, `no current-plan item with id "${item}"`);
+      const from = date(ps, "from", pp);
+      const to = date(ps, "to", pp);
+      if (from && to && to < from) err(`${pp}.to`, "is before from");
+      pauses.push({ item, from, to });
+    });
+    scenarios.push({ id, name, contingencyPercent, items: scItems, pauses });
   });
 
-  return errors.length ? { ok: false, errors } : { ok: true, budget: { horizonMonths, accounts, balances, items } };
+  return errors.length ? { ok: false, errors } : { ok: true, budget: { horizonMonths, accounts, balances, items, scenarios } };
 }
 
 function parseRepeat(r: unknown, p: string, err: (path: string, msg: string) => void): Repeat | null {

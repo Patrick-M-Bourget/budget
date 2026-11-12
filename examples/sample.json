@@ -19,12 +19,99 @@
     {"name": "Hydro", "category": "Utilities", "kind": "expense", "amount": 180.0, "account": "chequing", "start": "2026-11-20", "repeat": {"unit": "month", "every": 2}},
     {"name": "Internet", "category": "Utilities", "kind": "expense", "amount": 85.0, "account": "chequing", "start": "2026-11-08", "repeat": {"unit": "month"}},
     {"name": "Groceries", "category": "Food", "kind": "expense", "amount": 210.0, "account": "chequing", "start": "2026-11-06", "repeat": {"unit": "week"}},
-    {"name": "Fun money", "category": "Discretionary", "kind": "expense", "amount": 500.0, "account": "chequing", "start": "2026-11-03", "repeat": {"unit": "month"}},
+    {"name": "Fun money", "category": "Discretionary", "kind": "expense", "amount": 500.0, "account": "chequing", "start": "2026-11-03", "repeat": {"unit": "month"}, "id": "fun-money"},
     {"name": "Software", "category": "Subscriptions", "kind": "expense", "amount": 60.0, "account": "chequing", "start": "2026-11-12", "repeat": {"unit": "month"}},
     {"name": "Home insurance", "category": "Housing", "kind": "expense", "amount": 1320.0, "account": "chequing", "start": "2027-04-15", "repeat": {"unit": "year"}},
     {"name": "Furnace service", "category": "Housing", "kind": "expense", "amount": 240.0, "account": "chequing", "start": "2027-01-20"},
     {"name": "Gym", "category": "Discretionary", "kind": "expense", "amount": 55.0, "account": "chequing", "start": "2026-11-05", "repeat": {"unit": "month"}, "end": "2027-03-31"},
-    {"name": "Savings contribution", "category": "Savings", "kind": "transfer", "amount": 500.0, "account": "chequing", "to": "savings", "start": "2026-11-16", "repeat": {"unit": "semimonthly", "days": [1, 16]}},
+    {"name": "Savings contribution", "category": "Savings", "kind": "transfer", "amount": 500.0, "account": "chequing", "to": "savings", "start": "2026-11-16", "repeat": {"unit": "semimonthly", "days": [1, 16]}, "id": "savings-contribution"},
     {"name": "RRSP contribution", "category": "Savings", "kind": "transfer", "amount": 300.0, "account": "chequing", "to": "rrsp", "start": "2026-12-02", "repeat": {"unit": "month"}}
+  ],
+  "scenarios": [
+    {
+      "id": "reno-summer-2027",
+      "name": "Reno, summer 2027",
+      "contingencyPercent": 15,
+      "items": [
+        {
+          "name": "Move savings to chequing",
+          "category": "Reno",
+          "kind": "transfer",
+          "amount": 22000.0,
+          "account": "savings",
+          "to": "chequing",
+          "start": "2027-05-01"
+        },
+        {
+          "name": "Contractor deposit",
+          "category": "Reno",
+          "kind": "expense",
+          "amount": 12000.0,
+          "account": "chequing",
+          "start": "2027-05-03"
+        },
+        {
+          "name": "Progress payment",
+          "category": "Reno",
+          "kind": "expense",
+          "amount": 10000.0,
+          "account": "chequing",
+          "start": "2027-06-15"
+        },
+        {
+          "name": "Final payment (holdback released)",
+          "category": "Reno",
+          "kind": "expense",
+          "amount": 6000.0,
+          "account": "chequing",
+          "start": "2027-08-15"
+        }
+      ],
+      "pauses": [
+        {
+          "item": "savings-contribution",
+          "from": "2027-05-01",
+          "to": "2027-10-31"
+        },
+        {
+          "item": "fun-money",
+          "from": "2027-05-01",
+          "to": "2027-08-31"
+        }
+      ]
+    },
+    {
+      "id": "reno-small-spring",
+      "name": "Smaller reno, spring 2027",
+      "contingencyPercent": 10,
+      "items": [
+        {
+          "name": "Move savings to chequing",
+          "category": "Reno",
+          "kind": "transfer",
+          "amount": 15000.0,
+          "account": "savings",
+          "to": "chequing",
+          "start": "2027-03-01"
+        },
+        {
+          "name": "Contractor deposit",
+          "category": "Reno",
+          "kind": "expense",
+          "amount": 6000.0,
+          "account": "chequing",
+          "start": "2027-03-02"
+        },
+        {
+          "name": "Final payment",
+          "category": "Reno",
+          "kind": "expense",
+          "amount": 9000.0,
+          "account": "chequing",
+          "start": "2027-04-20"
+        }
+      ],
+      "pauses": []
+    }
   ]
 }

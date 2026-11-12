@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
-import type { Budget, Item } from "../data/types";
-import { expandItem, forecast, periodicRate } from "./forecast";
+import type { Budget, Item, Scenario } from "../data/types";
+import { comparePlans, expandItem, forecast, periodicRate } from "./forecast";
 
 const item = (over: Partial<Item> = {}): Item => ({
   name: "Rent",
@@ -18,6 +18,7 @@ const budget = (items: Item[], over: Partial<Budget> = {}): Budget => ({
   accounts: [{ id: "chq", name: "Chequing", kind: "cash" }],
   balances: [{ account: "chq", date: "2026-01-01", balance: 1000_00 }],
   items,
+  scenarios: [],
   ...over,
 });
 
@@ -353,6 +354,49 @@ describe("forecast", () => {
     it("marks the renewal date inside the window", () => {
       expect(forecast(withMortgage(), "2026-01-10").markers).toEqual([{ date: "2026-09-01", label: "Mortgage renewal" }]);
       expect(forecast(withMortgage({ renewal: "2030-01-01" }), "2026-01-10").markers).toEqual([]);
+    });
+  });
+
+  describe("scenarios", () => {
+    const saving = item({ id: "save", name: "Savings", amount: 400_00, start: "2026-01-20" });
+    const reno: Scenario = {
+      id: "reno",
+      name: "Reno",
+      contingencyPercent: 15,
+      items: [
+        item({ name: "Deposit", amount: 1000_00, start: "2026-02-10", repeat: undefined }),
+        item({ name: "Rebate", kind: "income", amount: 500_00, start: "2026-03-10", repeat: undefined }),
+      ],
+      pauses: [{ item: "save", from: "2026-02-01", to: "2026-03-20" }],
+    };
+    const b = budget([saving], { horizonMonths: 4, scenarios: [reno] });
+    const names = (f: ReturnType<typeof forecast>) => f.months.flatMap((m) => m.occurrences.map((o) => `${o.date} ${o.name} ${o.amount}`));
+
+    it("adds the scenario's items, scaling only expenses by the contingency", () => {
+      const f = forecast(b, "2026-01-10", reno);
+      expect(names(f)).toContain("2026-02-10 Deposit 115000");
+      expect(names(f)).toContain("2026-03-10 Rebate 50000");
+    });
+
+    it("pauses current-plan items between the pause dates, inclusive", () => {
+      const f = forecast(b, "2026-01-10", reno);
+      const savings = names(f).filter((n) => n.includes("Savings"));
+      expect(savings).toEqual(["2026-01-20 Savings 40000", "2026-04-20 Savings 40000"]);
+    });
+
+    it("leaves the current plan unchanged by any scenario", () => {
+      const plain = forecast(b, "2026-01-10");
+      expect(names(plain)).toEqual(["2026-01-20 Savings 40000", "2026-02-20 Savings 40000", "2026-03-20 Savings 40000", "2026-04-20 Savings 40000"]);
+      expect(forecast(budget([saving], { horizonMonths: 4 }), "2026-01-10")).toEqual(plain);
+    });
+
+    it("compares the current plan with each chosen scenario separately", () => {
+      const other: Scenario = { ...reno, id: "small", name: "Smaller reno", contingencyPercent: 0, pauses: [] };
+      const plans = comparePlans({ ...b, scenarios: [reno, other] }, "2026-01-10", ["small"]);
+      expect(plans.map((p) => p.name)).toEqual(["Current plan", "Smaller reno"]);
+      // Not stacked: the smaller reno alone, without the other scenario's pause.
+      expect(names(plans[1]!.forecast)).toContain("2026-02-10 Deposit 100000");
+      expect(names(plans[1]!.forecast)).toContain("2026-02-20 Savings 40000");
     });
   });
 });
