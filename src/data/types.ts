@@ -7,14 +7,18 @@ export type Account = {
   id: string;
   name: string;
   kind: "cash";
-  /** End-of-day balance on `openingDate`. Occurrences on or before that date are already in it. */
-  openingDate: DateStr;
-  openingBalance: Cents;
 };
 
-export type Repeat = { every: number; unit: "month" };
+/** An end-of-day balance read from the bank. The forecast re-anchors to it. */
+export type RealBalance = { account: string; date: DateStr; balance: Cents };
+
+export type Repeat =
+  | { unit: "day" | "week" | "month" | "year"; every: number }
+  /** Twice a month on two days of the month (clamped to month-end). */
+  | { unit: "semimonthly"; days: [number, number] };
 
 export type Item = {
+  id?: string;
   name: string;
   category: string;
   kind: "income" | "expense";
@@ -22,12 +26,16 @@ export type Item = {
   amount: Cents;
   account: string;
   start: DateStr;
-  repeat: Repeat;
+  /** Omitted means the item happens once, on `start`. */
+  repeat?: Repeat;
+  /** Last day the item can occur (inclusive). */
+  end?: DateStr;
 };
 
 export type Budget = {
   /** Months to forecast from today, 1–36. */
   horizonMonths: number;
   accounts: Account[];
+  balances: RealBalance[];
   items: Item[];
 };
