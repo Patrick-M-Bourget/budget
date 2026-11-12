@@ -1,10 +1,10 @@
-import { useMemo } from "react";
+import { Fragment, useMemo, useState } from "react";
 import dayjs from "dayjs";
 import { Alert, Code, Container, Group, List, Paper, Stack, Table, Text, Title } from "@mantine/core";
 import { LineChart } from "@mantine/charts";
-import type { Budget, Cents } from "./data/types";
+import type { Account, Budget, Cents } from "./data/types";
 import { validateBudget } from "./data/validate";
-import { forecast } from "./engine/forecast";
+import { forecast, type MonthRow } from "./engine/forecast";
 import { useBudgetFile } from "./useBudgetFile";
 
 const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
@@ -114,25 +114,45 @@ function Dashboard({ budget }: { budget: Budget }) {
         />
       </Paper>
 
-      <Paper withBorder radius="md">
-        <Table striped highlightOnHover>
-          <Table.Thead>
-            <Table.Tr>
-              <Table.Th>Month</Table.Th>
-              <Table.Th ta="right">In</Table.Th>
-              <Table.Th ta="right">Out</Table.Th>
-              <Table.Th ta="right">Net</Table.Th>
-              {accounts.map((a) => (
-                <Table.Th key={a.id} ta="right">
-                  {a.name} (end)
-                </Table.Th>
-              ))}
-            </Table.Tr>
-          </Table.Thead>
-          <Table.Tbody>
-            {f.months.map((m) => (
-              <Table.Tr key={m.month}>
-                <Table.Td>{fmtMonth(m.month)}</Table.Td>
+      <MonthTable months={f.months} accounts={accounts} />
+      <Text size="xs" c="dimmed">
+        Click a month to see its items. The first and last months are partial: only items from today up to the end of the forecast are counted.
+      </Text>
+    </Stack>
+  );
+}
+
+function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Account[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
+  const cols = 4 + accounts.length;
+  return (
+    <Paper withBorder radius="md">
+      <Table highlightOnHover>
+        <Table.Thead>
+          <Table.Tr>
+            <Table.Th>Month</Table.Th>
+            <Table.Th ta="right">In</Table.Th>
+            <Table.Th ta="right">Out</Table.Th>
+            <Table.Th ta="right">Net</Table.Th>
+            {accounts.map((a) => (
+              <Table.Th key={a.id} ta="right">
+                {a.name} (end)
+              </Table.Th>
+            ))}
+          </Table.Tr>
+        </Table.Thead>
+        <Table.Tbody>
+          {months.map((m) => (
+            <Fragment key={m.month}>
+              <Table.Tr
+                style={{ cursor: "pointer" }}
+                onClick={() => setOpen(open === m.month ? null : m.month)}
+                aria-expanded={open === m.month}
+              >
+                <Table.Td>
+                  {open === m.month ? "▾" : "▸"} {fmtMonth(m.month)}
+                </Table.Td>
                 <Table.Td ta="right">{fmtMoney(m.in)}</Table.Td>
                 <Table.Td ta="right">{fmtMoney(m.out)}</Table.Td>
                 <Table.Td ta="right" c={m.net < 0 ? "red" : undefined}>
@@ -144,13 +164,41 @@ function Dashboard({ budget }: { budget: Budget }) {
                   </Table.Td>
                 ))}
               </Table.Tr>
-            ))}
-          </Table.Tbody>
-        </Table>
-      </Paper>
-      <Text size="xs" c="dimmed">
-        The first and last months are partial: only items from today up to the end of the forecast are counted.
-      </Text>
-    </Stack>
+              {open === m.month && (
+                <Table.Tr>
+                  <Table.Td colSpan={cols} bg="var(--mantine-color-default-hover)">
+                    {m.occurrences.length === 0 ? (
+                      <Text size="sm" c="dimmed">
+                        Nothing due this month.
+                      </Text>
+                    ) : (
+                      <Table withRowBorders={false} verticalSpacing={4}>
+                        <Table.Tbody>
+                          {m.occurrences.map((o, i) => (
+                            <Table.Tr key={i}>
+                              <Table.Td>{dayjs(o.date).format("MMM D")}</Table.Td>
+                              <Table.Td>{o.name}</Table.Td>
+                              <Table.Td c="dimmed">{o.category}</Table.Td>
+                              <Table.Td c="dimmed">{names[o.account]}</Table.Td>
+                              <Table.Td ta="right" c={o.kind === "income" ? "teal" : undefined}>
+                                {o.kind === "income" ? "+" : "−"}
+                                {fmtMoney(o.amount)}
+                              </Table.Td>
+                              <Table.Td ta="right" c="dimmed">
+                                {fmtMoney(o.balanceAfter)}
+                              </Table.Td>
+                            </Table.Tr>
+                          ))}
+                        </Table.Tbody>
+                      </Table>
+                    )}
+                  </Table.Td>
+                </Table.Tr>
+              )}
+            </Fragment>
+          ))}
+        </Table.Tbody>
+      </Table>
+    </Paper>
   );
 }
