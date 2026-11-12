@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Code, Container, Group, List, Paper, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Chip, Code, Container, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { LineChart } from "@mantine/charts";
 import type { Account, Budget, Cents } from "./data/types";
 import { validateBudget } from "./data/validate";
-import { forecast, type Forecast, type MonthRow } from "./engine/forecast";
+import { comparePlans, CURRENT_PLAN, type MonthRow } from "./engine/forecast";
 import { useBudgetFile } from "./useBudgetFile";
 
 const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
@@ -68,7 +68,6 @@ function Loaded({ json, path }: { json: unknown; path: string }) {
   return <Dashboard budget={result.budget} />;
 }
 
-type Plan = { name: string; forecast: Forecast };
 type Metric = "netWorth" | "cash" | "debt";
 const METRICS: { key: Metric; title: string }[] = [
   { key: "netWorth", title: "Net worth (home value not counted)" },
@@ -82,24 +81,50 @@ const fmtAccount = (a: Account, v: Cents) => fmtMoney(a.kind === "debt" ? -v : v
 
 function Dashboard({ budget }: { budget: Budget }) {
   const today = dayjs().format("YYYY-MM-DD");
-  const plans: Plan[] = useMemo(() => [{ name: "Current plan", forecast: forecast(budget, today) }], [budget, today]);
+  const allIds = budget.scenarios.map((s) => s.id);
+  // Scenarios start switched on; ones added to the file later appear switched on too.
+  const [hidden, setHidden] = useState<string[]>([]);
+  const active = allIds.filter((id) => !hidden.includes(id));
+  const activeKey = active.join("|");
+  const plans = useMemo(() => comparePlans(budget, today, active), [budget, today, activeKey]);
+  const [shownId, setShownId] = useState(CURRENT_PLAN);
   const accounts = budget.accounts;
   const cashAccounts = accounts.filter((a) => a.kind === "cash");
-  const shown = plans[0]!;
+  const shown = plans.find((p) => p.id === shownId) ?? plans[0]!;
+  const color = (i: number) => PLAN_COLORS[i % PLAN_COLORS.length]!;
 
   return (
     <Stack gap="lg">
+      {budget.scenarios.length > 0 && (
+        <Group gap="xs">
+          <Text size="sm" c="dimmed">
+            Compare with:
+          </Text>
+          <Chip.Group multiple value={active} onChange={(on) => setHidden(allIds.filter((id) => !on.includes(id)))}>
+            {budget.scenarios.map((sc) => (
+              <Chip key={sc.id} value={sc.id} size="sm">
+                {sc.name}
+                {sc.contingencyPercent > 0 ? ` (+${sc.contingencyPercent}% contingency)` : ""}
+              </Chip>
+            ))}
+          </Chip.Group>
+        </Group>
+      )}
       <Group grow align="stretch">
         {cashAccounts.map((a) => (
           <Paper key={a.id} withBorder p="md" radius="md">
             <Text size="sm" c="dimmed">
               {a.name}: lowest balance
             </Text>
-            {plans.map((p) => {
+            {plans.map((p, i) => {
               const low = p.forecast.lowest[a.id];
               return (
-                <Group key={p.name} justify="space-between" gap="xs" wrap="nowrap">
-                  {plans.length > 1 && <Text size="sm">{p.name}</Text>}
+                <Group key={p.id} justify="space-between" gap="xs" wrap="nowrap">
+                  {plans.length > 1 && (
+                    <Text size="sm" c={color(i)}>
+                      {p.name}
+                    </Text>
+                  )}
                   <Text size="lg" fw={600} c={low && low.balance < 0 ? "red" : undefined}>
                     {low ? fmtMoney(low.balance) : "n/a"}
                     <Text span size="sm" c="dimmed" fw={400}>
@@ -126,7 +151,7 @@ function Dashboard({ budget }: { budget: Budget }) {
                 ...Object.fromEntries(plans.map((p) => [p.name, (p.forecast.daily[i]?.totals[m.key] ?? 0) / 100])),
               }))}
               dataKey="date"
-              series={plans.map((p, i) => ({ name: p.name, color: PLAN_COLORS[i % PLAN_COLORS.length]! }))}
+              series={plans.map((p, i) => ({ name: p.name, color: color(i) }))}
               curveType="stepAfter"
               withDots={false}
               withLegend={plans.length > 1}
@@ -140,9 +165,19 @@ function Dashboard({ budget }: { budget: Budget }) {
         ))}
       </SimpleGrid>
 
-      <Text size="sm" c="dimmed">
-        Forecast from {fmtDate(shown.forecast.from)} to {fmtDate(shown.forecast.to)}.
-      </Text>
+      <Group justify="space-between">
+        <Text size="sm" c="dimmed">
+          Forecast from {fmtDate(shown.forecast.from)} to {fmtDate(shown.forecast.to)}.
+        </Text>
+        {plans.length > 1 && (
+          <SegmentedControl
+            size="xs"
+            value={shown.id}
+            onChange={setShownId}
+            data={plans.map((p) => ({ value: p.id, label: p.name }))}
+          />
+        )}
+      </Group>
       <MonthTable months={shown.forecast.months} accounts={accounts} />
       <Text size="xs" c="dimmed">
         Click a month to see its items. In and out leave transfers out. The first and last months are partial: only
