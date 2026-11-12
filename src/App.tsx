@@ -1,11 +1,12 @@
 import { Fragment, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Chip, Code, Container, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Button, Chip, Code, Container, Group, List, Paper, SegmentedControl, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { LineChart } from "@mantine/charts";
 import type { Account, Budget, Cents } from "./data/types";
 import { validateBudget } from "./data/validate";
 import { comparePlans, CURRENT_PLAN, type MonthRow } from "./engine/forecast";
 import { useBudgetFile } from "./useBudgetFile";
+import { download, monthlyCsv, occurrencesCsv } from "./csv";
 
 const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
 const fmtMoney = (c: Cents) => money.format(c / 100);
@@ -169,15 +170,25 @@ function Dashboard({ budget }: { budget: Budget }) {
         <Text size="sm" c="dimmed">
           Forecast from {fmtDate(shown.forecast.from)} to {fmtDate(shown.forecast.to)}.
         </Text>
-        {plans.length > 1 && (
+        <Group gap="xs">
+          <Button size="xs" variant="default" onClick={() => download(`budget-items-${today}.csv`, occurrencesCsv(plans, accounts))}>
+            Export items CSV
+          </Button>
+          <Button size="xs" variant="default" onClick={() => download(`budget-monthly-${today}.csv`, monthlyCsv(plans, accounts))}>
+            Export monthly CSV
+          </Button>
+        </Group>
+      </Group>
+      {plans.length > 1 && (
+        <Group justify="flex-end">
           <SegmentedControl
             size="xs"
             value={shown.id}
             onChange={setShownId}
             data={plans.map((p) => ({ value: p.id, label: p.name }))}
           />
-        )}
-      </Group>
+        </Group>
+      )}
       <MonthTable months={shown.forecast.months} accounts={accounts} />
       <Text size="xs" c="dimmed">
         Click a month to see its items. In and out leave transfers out. The first and last months are partial: only
