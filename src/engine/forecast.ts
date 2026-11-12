@@ -98,8 +98,11 @@ export function periodicRate(ratePercent: number, frequency: MortgageFrequency):
   return Math.pow(1 + ratePercent / 200, 2 / PERIODS_PER_YEAR[frequency]) - 1;
 }
 
-/** Something due on a day: a scheduled item, or a mortgage payment worked out from the balance owed. */
-type Due = { order: number; item: Item } | { order: number; mortgage: Account };
+/** Something due on a day: a scheduled item, or a mortgage payment or HELOC interest worked out from the balance owed. */
+type Due = { order: number; item: Item } | { order: number; mortgage: Account } | { order: number; heloc: Account };
+
+/** HELOC interest runs first on the 1st, so it sees the balance owed at the start of the month. */
+const HELOC_INTEREST_ORDER = -1;
 
 /** What gets posted to the accounts and listed in the month. */
 type Entry = Pick<Occurrence, "name" | "category" | "kind" | "account" | "to" | "amount">;
@@ -140,6 +143,11 @@ export function forecast(budget: Budget, today: DateStr, scenario?: Scenario): F
     const schedule: Item = { name: "", category: "", kind: "expense", amount: 0, account: a.id, start: m.firstPayment, repeat: PAYMENT_REPEAT[m.frequency] };
     for (const date of expandItem(schedule, start, to)) add(date, { order: KIND_ORDER.expense, mortgage: a });
     if (m.renewal && m.renewal >= today && m.renewal <= to) markers.push({ date: m.renewal, label: `${a.name} renewal` });
+  }
+  for (const a of budget.accounts) {
+    if (!a.heloc) continue;
+    const monthly: Item = { name: "", category: "", kind: "expense", amount: 0, account: a.id, start: fmt(dayjs(start).startOf("month")), repeat: { unit: "month", every: 1 } };
+    for (const date of expandItem(monthly, start, to)) add(date, { order: HELOC_INTEREST_ORDER, heloc: a });
   }
   // Stable sort keeps file order within the same kind.
   for (const list of due.values()) list.sort((a, b) => a.order - b.order);
@@ -197,6 +205,15 @@ export function forecast(budget: Budget, today: DateStr, scenario?: Scenario): F
       if ("item" in d) {
         const { name, category, kind, account, to, amount } = d.item;
         post({ name, category, kind, account, to, amount });
+        continue;
+      }
+      if ("heloc" in d) {
+        // Simple monthly interest on what was owed at the start of the month, paid from cash.
+        const a = d.heloc;
+        const owed = -(balances[a.id] ?? 0);
+        const interest = Math.round((owed * a.heloc!.ratePercent) / 100 / 12);
+        if (balances[a.id] !== undefined && interest > 0)
+          post({ name: `${a.name} interest`, category: "Interest", kind: "expense", account: a.heloc!.interestFrom, amount: interest });
         continue;
       }
       // Mortgage payment: interest on what's owed is spending; the rest pays down the principal.
