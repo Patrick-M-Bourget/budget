@@ -4,14 +4,16 @@
     {"id": "chequing", "name": "Chequing", "kind": "cash"},
     {"id": "savings", "name": "Savings", "kind": "cash"},
     {"id": "rrsp", "name": "RRSP", "kind": "investment"},
-    {"id": "mortgage", "name": "Mortgage", "kind": "debt", "mortgage": {"ratePercent": 4.79, "payment": 2400.0, "frequency": "monthly", "firstPayment": "2026-12-01", "paidFrom": "chequing", "renewal": "2027-06-01"}}
+    {"id": "mortgage", "name": "Mortgage", "kind": "debt", "mortgage": {"ratePercent": 4.79, "payment": 2400.0, "frequency": "monthly", "firstPayment": "2026-12-01", "paidFrom": "chequing", "renewal": "2027-06-01"}},
+    {"id": "heloc", "name": "HELOC", "kind": "debt", "heloc": {"ratePercent": 6.2, "interestFrom": "chequing"}}
   ],
   "balances": [
     {"account": "chequing", "date": "2026-11-01", "balance": 4200.0},
     {"account": "chequing", "date": "2026-11-10", "balance": 2650.0},
     {"account": "savings", "date": "2026-11-01", "balance": 18500.0},
     {"account": "rrsp", "date": "2026-11-01", "balance": 42000.0},
-    {"account": "mortgage", "date": "2026-11-01", "balance": 412000.0}
+    {"account": "mortgage", "date": "2026-11-01", "balance": 412000.0},
+    {"account": "heloc", "date": "2026-11-01", "balance": 0.0}
   ],
   "items": [
     {"name": "Salary", "category": "Income", "kind": "income", "amount": 3100.0, "account": "chequing", "start": "2026-11-15", "repeat": {"unit": "semimonthly", "days": [15, 31]}},
@@ -37,7 +39,7 @@
           "name": "Move savings to chequing",
           "category": "Reno",
           "kind": "transfer",
-          "amount": 22000.0,
+          "amount": 12000.0,
           "account": "savings",
           "to": "chequing",
           "start": "2027-05-01"
@@ -65,6 +67,27 @@
           "amount": 6000.0,
           "account": "chequing",
           "start": "2027-08-15"
+        },
+        {
+          "name": "HELOC draw",
+          "category": "Reno",
+          "kind": "transfer",
+          "amount": 15000.0,
+          "account": "heloc",
+          "to": "chequing",
+          "start": "2027-06-14"
+        },
+        {
+          "name": "HELOC repayment",
+          "category": "Reno",
+          "kind": "transfer",
+          "amount": 1500.0,
+          "account": "chequing",
+          "to": "heloc",
+          "start": "2027-08-01",
+          "repeat": {
+            "unit": "month"
+          }
         }
       ],
       "pauses": [

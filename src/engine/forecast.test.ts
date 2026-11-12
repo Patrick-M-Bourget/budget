@@ -399,5 +399,49 @@ describe("forecast", () => {
       expect(names(plans[1]!.forecast)).toContain("2026-02-20 Savings 40000");
     });
   });
+
+  describe("HELOC", () => {
+    const withHeloc = (items: Item[], owed = 0): Budget =>
+      budget(items, {
+        horizonMonths: 4,
+        accounts: [
+          { id: "chq", name: "Chequing", kind: "cash" },
+          { id: "heloc", name: "HELOC", kind: "debt", heloc: { ratePercent: 6, interestFrom: "chq" } },
+        ],
+        balances: [
+          { account: "chq", date: "2026-01-01", balance: 10000_00 },
+          { account: "heloc", date: "2026-01-01", balance: -owed },
+        ],
+      });
+    const occ = (f: ReturnType<typeof forecast>) => f.months.flatMap((m) => m.occurrences.map((o) => [o.date, o.name, o.amount]));
+    const owedOn = (f: ReturnType<typeof forecast>, d: string) => f.daily.find((p) => p.date === d)!.totals.debt;
+
+    it("charges nothing while nothing is owed", () => {
+      expect(occ(forecast(withHeloc([]), "2026-01-10"))).toEqual([]);
+    });
+
+    it("charges monthly interest on the start-of-month balance, paid from cash", () => {
+      const draw = item({ name: "Draw", kind: "transfer", amount: 20000_00, account: "heloc", to: "chq", start: "2026-02-10", repeat: undefined });
+      const f = forecast(withHeloc([draw], 10000_00), "2026-01-10");
+      expect(occ(f)).toEqual([
+        ["2026-02-01", "HELOC interest", 50_00], // 10,000 × 6% / 12; the Feb 10 draw isn't owed yet on Feb 1
+        ["2026-02-10", "Draw", 20000_00],
+        ["2026-03-01", "HELOC interest", 150_00], // 30,000 × 6% / 12
+        ["2026-04-01", "HELOC interest", 150_00],
+        ["2026-05-01", "HELOC interest", 150_00],
+      ]);
+      expect(f.months[1]!.out).toBe(50_00); // interest is spending; the draw is a transfer
+      expect(owedOn(f, "2026-02-10")).toBe(30000_00);
+    });
+
+    it("grows with expenses charged straight to it and shrinks with repayments", () => {
+      const contractor = item({ name: "Contractor", amount: 5000_00, account: "heloc", start: "2026-01-20", repeat: undefined });
+      const repay = item({ name: "Repay", kind: "transfer", amount: 1000_00, account: "chq", to: "heloc", start: "2026-02-15" });
+      const f = forecast(withHeloc([contractor, repay]), "2026-01-10");
+      expect(owedOn(f, "2026-01-20")).toBe(5000_00);
+      expect(owedOn(f, "2026-02-15")).toBe(4000_00);
+      expect(occ(f).filter(([, n]) => n === "HELOC interest").map(([, , a]) => a)).toEqual([25_00, 20_00, 15_00, 10_00]); // Feb–May on 5k, 4k, 3k, 2k owed
+    });
+  });
 });
 

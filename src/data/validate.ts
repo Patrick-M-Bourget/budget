@@ -4,6 +4,7 @@ import type {
   AccountKind,
   Budget,
   Cents,
+  Heloc,
   Item,
   Mortgage,
   MortgageFrequency,
@@ -77,6 +78,7 @@ export function validateBudget(raw: unknown): ValidationResult {
   const ids = new Set<string>();
   const kinds = new Map<string, AccountKind>();
   const mortgages: [string, Obj, Account][] = [];
+  const helocs: [string, Obj, Account][] = [];
   list(raw, "accounts").forEach((a, i) => {
     const p = `accounts[${i}]`;
     if (!isObj(a)) return err(p, "expected an object");
@@ -94,8 +96,24 @@ export function validateBudget(raw: unknown): ValidationResult {
       if (!isObj(a.mortgage)) err(`${p}.mortgage`, "expected an object");
       mortgages.push([`${p}.mortgage`, m, account]);
     }
+    if (a.heloc !== undefined) {
+      if (kind !== "debt") err(`${p}.heloc`, 'only a "debt" account can be a HELOC');
+      if (a.mortgage !== undefined) err(`${p}.heloc`, "an account can't be both a mortgage and a HELOC");
+      const h = isObj(a.heloc) ? a.heloc : {};
+      if (!isObj(a.heloc)) err(`${p}.heloc`, "expected an object");
+      helocs.push([`${p}.heloc`, h, account]);
+    }
     accounts.push(account);
   });
+  for (const [p, h, account] of helocs) {
+    const rate = h.ratePercent;
+    if (typeof rate !== "number" || !(rate >= 0 && rate <= 30)) err(`${p}.ratePercent`, "expected a percentage from 0 to 30");
+    const interestFrom = accountRef(h, "interestFrom", p);
+    if (interestFrom && kinds.get(interestFrom) !== undefined && kinds.get(interestFrom) !== "cash")
+      err(`${p}.interestFrom`, "expected a cash account");
+    const heloc: Heloc = { ratePercent: typeof rate === "number" ? rate : 0, interestFrom };
+    account.heloc = heloc;
+  }
   // Mortgages refer to other accounts, so check them once every account id is known.
   for (const [p, m, account] of mortgages) {
     const rate = m.ratePercent;

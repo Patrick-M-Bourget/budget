@@ -21,12 +21,21 @@ export type Mortgage = {
   renewal?: DateStr;
 };
 
+/** Terms for a debt account that is a home-equity line of credit. */
+export type Heloc = {
+  /** Annual rate in percent. Interest is charged monthly on the balance owed at the start of the month. */
+  ratePercent: number;
+  /** Cash account the monthly interest comes out of. */
+  interestFrom: string;
+};
+
 export type Account = {
   id: string;
   name: string;
   kind: AccountKind;
-  /** Only on debt accounts. */
+  /** Only on debt accounts, and not together with `heloc`. */
   mortgage?: Mortgage;
+  heloc?: Heloc;
 };
 
 /**

@@ -218,5 +218,23 @@ describe("validateBudget", () => {
       "scenarios[1].items: expected a list",
     ]);
   });
+
+  it("accepts HELOC terms on a debt account and checks them", () => {
+    const raw = valid();
+    raw.accounts.push({ id: "heloc", name: "HELOC", kind: "debt", heloc: { ratePercent: 6.2, interestFrom: "chequing" } });
+    raw.balances.push({ account: "heloc", date: "2026-11-01", balance: 0 });
+    const r = validateBudget(raw);
+    expect(r.ok && r.budget.accounts[1]!.heloc).toEqual({ ratePercent: 6.2, interestFrom: "chequing" });
+
+    raw.accounts[0].heloc = { ratePercent: 6, interestFrom: "chequing" };
+    raw.accounts[1].heloc = { ratePercent: -1, interestFrom: "heloc" };
+    raw.accounts[1].mortgage = { ratePercent: 4, payment: 100, frequency: "monthly", firstPayment: "2026-12-01", paidFrom: "chequing" };
+    expect(errorsFor(raw)).toEqual([
+      'accounts[0].heloc: only a "debt" account can be a HELOC',
+      "accounts[1].heloc: an account can't be both a mortgage and a HELOC",
+      "accounts[1].heloc.ratePercent: expected a percentage from 0 to 30",
+      "accounts[1].heloc.interestFrom: expected a cash account",
+    ]);
+  });
 });
 
