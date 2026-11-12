@@ -1,0 +1,17 @@
+{
+  "horizonMonths": 12,
+  "accounts": [
+    { "id": "chequing", "name": "Chequing", "kind": "cash", "openingDate": "2026-11-01", "openingBalance": 4200.00 }
+  ],
+  "items": [
+    { "name": "Salary", "category": "Income", "kind": "income", "amount": 3100.00, "account": "chequing", "start": "2026-11-15", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Salary", "category": "Income", "kind": "income", "amount": 3100.00, "account": "chequing", "start": "2026-11-30", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Mortgage", "category": "Housing", "kind": "expense", "amount": 2400.00, "account": "chequing", "start": "2026-12-01", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Hydro", "category": "Utilities", "kind": "expense", "amount": 180.00, "account": "chequing", "start": "2026-11-20", "repeat": { "every": 2, "unit": "month" } },
+    { "name": "Internet", "category": "Utilities", "kind": "expense", "amount": 85.00, "account": "chequing", "start": "2026-11-08", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Groceries", "category": "Food", "kind": "expense", "amount": 900.00, "account": "chequing", "start": "2026-11-03", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Fun money", "category": "Discretionary", "kind": "expense", "amount": 500.00, "account": "chequing", "start": "2026-11-03", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Software", "category": "Subscriptions", "kind": "expense", "amount": 60.00, "account": "chequing", "start": "2026-11-12", "repeat": { "every": 1, "unit": "month" } },
+    { "name": "Property tax", "category": "Housing", "kind": "expense", "amount": 1450.00, "account": "chequing", "start": "2027-02-28", "repeat": { "every": 3, "unit": "month" } }
+  ]
+}
