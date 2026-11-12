@@ -1,10 +1,10 @@
 import { Fragment, useMemo, useState } from "react";
 import dayjs from "dayjs";
-import { Alert, Code, Container, Group, List, Paper, Stack, Table, Text, Title } from "@mantine/core";
+import { Alert, Code, Container, Group, List, Paper, SimpleGrid, Stack, Table, Text, Title } from "@mantine/core";
 import { LineChart } from "@mantine/charts";
 import type { Account, Budget, Cents } from "./data/types";
 import { validateBudget } from "./data/validate";
-import { forecast, type MonthRow } from "./engine/forecast";
+import { forecast, type Forecast, type MonthRow } from "./engine/forecast";
 import { useBudgetFile } from "./useBudgetFile";
 
 const money = new Intl.NumberFormat("en-CA", { style: "currency", currency: "CAD" });
@@ -68,55 +68,82 @@ function Loaded({ json, path }: { json: unknown; path: string }) {
   return <Dashboard budget={result.budget} />;
 }
 
+type Plan = { name: string; forecast: Forecast };
+type Metric = "netWorth" | "cash" | "debt";
+const METRICS: { key: Metric; title: string }[] = [
+  { key: "netWorth", title: "Net worth (home value not counted)" },
+  { key: "cash", title: "Cash (chequing + savings)" },
+  { key: "debt", title: "Debt owed" },
+];
+const PLAN_COLORS = ["blue.6", "orange.6", "grape.6", "teal.6", "red.6", "lime.6"];
+
+/** A debt's value is negative inside the engine; show it as the amount owed. */
+const fmtAccount = (a: Account, v: Cents) => fmtMoney(a.kind === "debt" ? -v : v);
+
 function Dashboard({ budget }: { budget: Budget }) {
   const today = dayjs().format("YYYY-MM-DD");
-  const f = useMemo(() => forecast(budget, today), [budget, today]);
+  const plans: Plan[] = useMemo(() => [{ name: "Current plan", forecast: forecast(budget, today) }], [budget, today]);
   const accounts = budget.accounts;
-
-  const chartData = f.daily.map((p) => ({
-    date: dayjs(p.date).format("MMM D"),
-    ...Object.fromEntries(accounts.map((a) => [a.name, (p.balances[a.id] ?? 0) / 100])),
-  }));
-  const colors = ["blue.6", "teal.6", "grape.6", "orange.6"];
+  const cashAccounts = accounts.filter((a) => a.kind === "cash");
+  const shown = plans[0]!;
 
   return (
     <Stack gap="lg">
       <Group grow align="stretch">
-        {accounts.map((a) => {
-          const low = f.lowest[a.id];
-          return (
-            <Paper key={a.id} withBorder p="md" radius="md">
-              <Text size="sm" c="dimmed">
-                {a.name}: lowest balance
-              </Text>
-              <Text size="xl" fw={600} c={low && low.balance < 0 ? "red" : undefined}>
-                {low ? fmtMoney(low.balance) : "n/a"}
-              </Text>
-              <Text size="sm" c="dimmed">
-                {low ? `on ${fmtDate(low.date)}` : ""} · forecast to {fmtDate(f.to)}
-              </Text>
-            </Paper>
-          );
-        })}
+        {cashAccounts.map((a) => (
+          <Paper key={a.id} withBorder p="md" radius="md">
+            <Text size="sm" c="dimmed">
+              {a.name}: lowest balance
+            </Text>
+            {plans.map((p) => {
+              const low = p.forecast.lowest[a.id];
+              return (
+                <Group key={p.name} justify="space-between" gap="xs" wrap="nowrap">
+                  {plans.length > 1 && <Text size="sm">{p.name}</Text>}
+                  <Text size="lg" fw={600} c={low && low.balance < 0 ? "red" : undefined}>
+                    {low ? fmtMoney(low.balance) : "n/a"}
+                    <Text span size="sm" c="dimmed" fw={400}>
+                      {low ? ` on ${fmtDate(low.date)}` : ""}
+                    </Text>
+                  </Text>
+                </Group>
+              );
+            })}
+          </Paper>
+        ))}
       </Group>
 
-      <Paper withBorder p="md" radius="md">
-        <LineChart
-          h={300}
-          data={chartData}
-          dataKey="date"
-          series={accounts.map((a, i) => ({ name: a.name, color: colors[i % colors.length]! }))}
-          curveType="stepAfter"
-          withDots={false}
-          withLegend={accounts.length > 1}
-          valueFormatter={(v) => money.format(v)}
-          yAxisProps={{ width: 90 }}
-        />
-      </Paper>
+      <SimpleGrid cols={{ base: 1, md: 3 }}>
+        {METRICS.map((m) => (
+          <Paper key={m.key} withBorder p="md" radius="md">
+            <Text size="sm" fw={600} mb="xs">
+              {m.title}
+            </Text>
+            <LineChart
+              h={220}
+              data={shown.forecast.daily.map((d, i) => ({
+                date: dayjs(d.date).format("MMM D"),
+                ...Object.fromEntries(plans.map((p) => [p.name, (p.forecast.daily[i]?.totals[m.key] ?? 0) / 100])),
+              }))}
+              dataKey="date"
+              series={plans.map((p, i) => ({ name: p.name, color: PLAN_COLORS[i % PLAN_COLORS.length]! }))}
+              curveType="stepAfter"
+              withDots={false}
+              withLegend={plans.length > 1}
+              valueFormatter={(v) => money.format(v)}
+              yAxisProps={{ width: 90 }}
+            />
+          </Paper>
+        ))}
+      </SimpleGrid>
 
-      <MonthTable months={f.months} accounts={accounts} />
+      <Text size="sm" c="dimmed">
+        Forecast from {fmtDate(shown.forecast.from)} to {fmtDate(shown.forecast.to)}.
+      </Text>
+      <MonthTable months={shown.forecast.months} accounts={accounts} />
       <Text size="xs" c="dimmed">
-        Click a month to see its items. The first and last months are partial: only items from today up to the end of the forecast are counted.
+        Click a month to see its items. In and out leave transfers out. The first and last months are partial: only
+        items from today up to the end of the forecast are counted.
       </Text>
     </Stack>
   );
@@ -124,10 +151,10 @@ function Dashboard({ budget }: { budget: Budget }) {
 
 function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Account[] }) {
   const [open, setOpen] = useState<string | null>(null);
-  const names = Object.fromEntries(accounts.map((a) => [a.id, a.name]));
-  const cols = 4 + accounts.length;
+  const byId = Object.fromEntries(accounts.map((a) => [a.id, a]));
+  const cols = 5 + accounts.length;
   return (
-    <Paper withBorder radius="md">
+    <Paper withBorder radius="md" style={{ overflowX: "auto" }}>
       <Table highlightOnHover>
         <Table.Thead>
           <Table.Tr>
@@ -137,9 +164,10 @@ function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Accoun
             <Table.Th ta="right">Net</Table.Th>
             {accounts.map((a) => (
               <Table.Th key={a.id} ta="right">
-                {a.name} (end)
+                {a.name} ({a.kind === "debt" ? "owed" : "end"})
               </Table.Th>
             ))}
+            <Table.Th ta="right">Net worth</Table.Th>
           </Table.Tr>
         </Table.Thead>
         <Table.Tbody>
@@ -150,7 +178,7 @@ function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Accoun
                 onClick={() => setOpen(open === m.month ? null : m.month)}
                 aria-expanded={open === m.month}
               >
-                <Table.Td>
+                <Table.Td style={{ whiteSpace: "nowrap" }}>
                   {open === m.month ? "▾" : "▸"} {fmtMonth(m.month)}
                 </Table.Td>
                 <Table.Td ta="right">{fmtMoney(m.in)}</Table.Td>
@@ -160,9 +188,12 @@ function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Accoun
                 </Table.Td>
                 {accounts.map((a) => (
                   <Table.Td key={a.id} ta="right">
-                    {fmtMoney(m.end[a.id] ?? 0)}
+                    {fmtAccount(a, m.end[a.id] ?? 0)}
                   </Table.Td>
                 ))}
+                <Table.Td ta="right" fw={600}>
+                  {fmtMoney(m.endTotals.netWorth)}
+                </Table.Td>
               </Table.Tr>
               {open === m.month && (
                 <Table.Tr>
@@ -174,21 +205,28 @@ function MonthTable({ months, accounts }: { months: MonthRow[]; accounts: Accoun
                     ) : (
                       <Table withRowBorders={false} verticalSpacing={4}>
                         <Table.Tbody>
-                          {m.occurrences.map((o, i) => (
-                            <Table.Tr key={i}>
-                              <Table.Td>{dayjs(o.date).format("MMM D")}</Table.Td>
-                              <Table.Td>{o.name}</Table.Td>
-                              <Table.Td c="dimmed">{o.category}</Table.Td>
-                              <Table.Td c="dimmed">{names[o.account]}</Table.Td>
-                              <Table.Td ta="right" c={o.kind === "income" ? "teal" : undefined}>
-                                {o.kind === "income" ? "+" : "−"}
-                                {fmtMoney(o.amount)}
-                              </Table.Td>
-                              <Table.Td ta="right" c="dimmed">
-                                {fmtMoney(o.balanceAfter)}
-                              </Table.Td>
-                            </Table.Tr>
-                          ))}
+                          {m.occurrences.map((o, i) => {
+                            const from = byId[o.account];
+                            const sign = o.kind === "income" ? "+" : o.kind === "expense" ? "−" : "";
+                            return (
+                              <Table.Tr key={i}>
+                                <Table.Td>{dayjs(o.date).format("MMM D")}</Table.Td>
+                                <Table.Td>{o.name}</Table.Td>
+                                <Table.Td c="dimmed">{o.category}</Table.Td>
+                                <Table.Td c="dimmed">
+                                  {from?.name}
+                                  {o.to !== undefined && ` → ${byId[o.to]?.name}`}
+                                </Table.Td>
+                                <Table.Td ta="right" c={o.kind === "income" ? "teal" : o.kind === "transfer" ? "dimmed" : undefined}>
+                                  {sign}
+                                  {fmtMoney(o.amount)}
+                                </Table.Td>
+                                <Table.Td ta="right" c="dimmed">
+                                  {from ? fmtAccount(from, o.balanceAfter) : ""}
+                                </Table.Td>
+                              </Table.Tr>
+                            );
+                          })}
                         </Table.Tbody>
                       </Table>
                     )}
