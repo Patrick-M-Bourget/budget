@@ -155,5 +155,25 @@ describe("validateBudget", () => {
       "items[3].to: only transfers have a destination account",
     ]);
   });
+
+  it("accepts mortgage terms on a debt account and checks them", () => {
+    const raw = valid();
+    const terms = { ratePercent: 4.79, payment: 2400, frequency: "monthly", firstPayment: "2026-12-01", paidFrom: "chequing", renewal: "2028-06-01" };
+    raw.accounts.push({ id: "mtg", name: "Mortgage", kind: "debt", mortgage: terms });
+    raw.balances.push({ account: "mtg", date: "2026-11-01", balance: 412000 });
+    const r = validateBudget(raw);
+    expect(r.ok && r.budget.accounts[1]!.mortgage).toEqual({ ...terms, payment: 240000 });
+
+    raw.accounts[0].mortgage = terms;
+    raw.accounts[1].mortgage = { ratePercent: 45, payment: 0, frequency: "daily", firstPayment: "soon", paidFrom: "mtg" };
+    expect(errorsFor(raw)).toEqual([
+      'accounts[0].mortgage: only a "debt" account can be a mortgage',
+      "accounts[1].mortgage.ratePercent: expected a percentage from 0 to 30",
+      "accounts[1].mortgage.payment: expected a positive dollar amount with at most 2 decimals",
+      'accounts[1].mortgage.frequency: expected one of "monthly", "biweekly", "accelerated-biweekly", "weekly", "accelerated-weekly"',
+      "accounts[1].mortgage.firstPayment: expected a real date as YYYY-MM-DD",
+      "accounts[1].mortgage.paidFrom: expected a cash account",
+    ]);
+  });
 });
 

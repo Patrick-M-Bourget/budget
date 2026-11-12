@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { Budget, Item } from "../data/types";
-import { expandItem, forecast } from "./forecast";
+import { expandItem, forecast, periodicRate } from "./forecast";
 
 const item = (over: Partial<Item> = {}): Item => ({
   name: "Rent",
@@ -274,4 +274,86 @@ describe("forecast", () => {
       expect(Object.keys(f.lowest).sort()).toEqual(["chq", "sav"]);
     });
   });
+
+  describe("mortgage", () => {
+    const withMortgage = (over: Partial<NonNullable<Budget["accounts"][number]["mortgage"]>> = {}, items: Item[] = []): Budget =>
+      budget(items, {
+        horizonMonths: 13,
+        accounts: [
+          { id: "chq", name: "Chequing", kind: "cash" },
+          {
+            id: "mtg",
+            name: "Mortgage",
+            kind: "debt",
+            mortgage: { ratePercent: 5, payment: 2326_42, frequency: "monthly", firstPayment: "2026-02-01", paidFrom: "chq", renewal: "2026-09-01", ...over },
+          },
+        ],
+        balances: [
+          { account: "chq", date: "2026-01-01", balance: 50000_00 },
+          { account: "mtg", date: "2026-01-01", balance: -400000_00 },
+        ],
+      });
+    const owedOn = (f: ReturnType<typeof forecast>, d: string) => -f.daily.find((p) => p.date === d)!.balances.mtg!;
+
+    it("uses Canadian semi-annual compounding for the per-payment rate", () => {
+      expect(periodicRate(5, "monthly")).toBeCloseTo(0.0041239155, 9);
+      expect(periodicRate(5, "biweekly")).toBeCloseTo(0.0019012368, 9);
+      expect(periodicRate(5, "accelerated-weekly")).toBe(periodicRate(5, "weekly"));
+    });
+
+    it("splits each payment into interest (spending) and principal (paydown)", () => {
+      const f = forecast(withMortgage(), "2026-01-10");
+      const feb = f.months[1]!;
+      expect(feb.occurrences.map((o) => [o.name, o.kind, o.amount])).toEqual([
+        ["Mortgage interest", "expense", 1649_57], // hand-checked: 400,000 × 0.0041239155
+        ["Mortgage principal", "transfer", 2326_42 - 1649_57],
+      ]);
+      expect(feb.out).toBe(1649_57);
+      expect(owedOn(f, "2026-02-01")).toBe(400000_00 - (2326_42 - 1649_57));
+      expect(f.daily.find((p) => p.date === "2026-02-01")!.balances.chq).toBe(50000_00 - 2326_42);
+    });
+
+    it("matches the closed-form amortization within $1 after 12 payments", () => {
+      // B12 = B0(1+i)^12 − P((1+i)^12 − 1)/i = 391,690.97 for B0 = 400,000, 5%, P = 2,326.42
+      const f = forecast(withMortgage(), "2026-01-10");
+      expect(Math.abs(owedOn(f, "2027-01-01") - 391690_97)).toBeLessThanOrEqual(100);
+    });
+
+    it("takes a prepayment fully off the principal, lowering later interest", () => {
+      const prepay = item({ name: "Prepay", kind: "transfer", amount: 10000_00, account: "chq", to: "mtg", start: "2026-01-15", repeat: undefined });
+      const f = forecast(withMortgage({}, [prepay]), "2026-01-10");
+      expect(owedOn(f, "2026-01-15")).toBe(390000_00);
+      expect(f.months[1]!.occurrences[0]!.amount).toBe(Math.round(390000_00 * periodicRate(5, "monthly")));
+    });
+
+    it("pays biweekly and stops once the mortgage is paid off", () => {
+      const f = forecast(
+        budget([], {
+          horizonMonths: 2,
+          accounts: [
+            { id: "chq", name: "Chequing", kind: "cash" },
+            { id: "mtg", name: "Mortgage", kind: "debt", mortgage: { ratePercent: 0, payment: 400_00, frequency: "biweekly", firstPayment: "2026-01-12", paidFrom: "chq" } },
+          ],
+          balances: [
+            { account: "chq", date: "2026-01-01", balance: 5000_00 },
+            { account: "mtg", date: "2026-01-01", balance: -1000_00 },
+          ],
+        }),
+        "2026-01-10",
+      );
+      const pays = f.months.flatMap((m) => m.occurrences).map((o) => [o.date, o.amount]);
+      expect(pays).toEqual([
+        ["2026-01-12", 400_00],
+        ["2026-01-26", 400_00],
+        ["2026-02-09", 200_00], // final payment is only what's left
+      ]);
+      expect(f.daily.at(-1)!.totals.debt).toBe(0);
+    });
+
+    it("marks the renewal date inside the window", () => {
+      expect(forecast(withMortgage(), "2026-01-10").markers).toEqual([{ date: "2026-09-01", label: "Mortgage renewal" }]);
+      expect(forecast(withMortgage({ renewal: "2030-01-01" }), "2026-01-10").markers).toEqual([]);
+    });
+  });
 });
+
